@@ -187,23 +187,38 @@ def render(spec, out):
         ImageDraw.Draw(img).text((hx1 - 52, y - 46), "?", font=fq, fill=NAVY, stroke_width=6, stroke_fill=YELLOW)
         y += bh + 30
 
-    # --- presenter (bottom-left) + bullet card (right)
+    # --- character / presenter (bottom-left) + bullet card (right)
     band_top = H - 236
-    pres = spec.get("presenter")
-    px1 = M
-    if pres and os.path.exists(pres):
-        p = Image.open(pres).convert("RGBA")
-        ph = min(800, H - y + 4)
-        p = p.resize((int(p.width * ph / p.height), ph), Image.LANCZOS)
+    char = None
+    cpath = spec.get("character")
+    if cpath and os.path.exists(cpath):
+        char = Image.open(cpath).convert("RGBA")
+        chh = min(760, H - 14 - (y - 10))
+        char = char.resize((int(char.width * chh / char.height), chh), Image.LANCZOS)
+        if char.width > 400:
+            char = char.resize((400, int(char.height * 400 / char.width)), Image.LANCZOS)
+        cxp, cyp = 14, H - 14 - char.height
         halo = Image.new("RGBA", img.size, (0, 0, 0, 0))
-        hx, hy = 20 + p.width // 2, H - ph + 230
-        ImageDraw.Draw(halo).ellipse((hx - 300, hy - 300, hx + 300, hy + 300), fill=(255, 255, 255, 150))
+        hx, hy = cxp + char.width // 2, cyp + char.height // 3
+        ImageDraw.Draw(halo).ellipse((hx - 260, hy - 260, hx + 260, hy + 260), fill=(255, 255, 255, 170))
         img.alpha_composite(halo.filter(ImageFilter.GaussianBlur(60)))
-        img.alpha_composite(p, (0, H - ph))
-        px1 = int(p.width * 0.80)
+        px1 = cxp + char.width + 10
+    else:
+        px1 = M
+        pres = spec.get("presenter")
+        if pres and os.path.exists(pres):
+            p = Image.open(pres).convert("RGBA")
+            ph = min(800, H - y + 4)
+            p = p.resize((int(p.width * ph / p.height), ph), Image.LANCZOS)
+            halo = Image.new("RGBA", img.size, (0, 0, 0, 0))
+            hx, hy = 20 + p.width // 2, H - ph + 230
+            ImageDraw.Draw(halo).ellipse((hx - 300, hy - 300, hx + 300, hy + 300), fill=(255, 255, 255, 150))
+            img.alpha_composite(halo.filter(ImageFilter.GaussianBlur(60)))
+            img.alpha_composite(p, (0, H - ph))
+            px1 = int(p.width * 0.80)
 
     fb = font(spec, "Medium", 34)
-    cx0, cx1 = max(px1, 470), W - M + 10
+    cx0, cx1 = max(px1, 430), W - M + 10
     tw_b = cx1 - cx0 - 120
     items = [wrap(tmp, b, fb, tw_b)[:2] for b in spec.get("bullets", [])[:4]]
     rows = sum(len(l) for l in items)
@@ -226,7 +241,7 @@ def render(spec, out):
             ImageDraw.Draw(img).text((cx0 + 96, by + j * 48), ln, font=fb, fill=NAVY)
         by += len(lines) * 48 + 26
 
-    # --- bottom credit band with colourful waves
+    # --- bottom band with colourful waves
     waves = Image.new("RGBA", img.size, (0, 0, 0, 0))
     wd = ImageDraw.Draw(waves)
     for off, col in [(-46, GOLD), (-30, (40, 170, 90)), (-16, PINK)]:
@@ -238,16 +253,40 @@ def render(spec, out):
     nm = Image.new("L", nb.size, 0)
     ImageDraw.Draw(nm).polygon([(x, y0 - band_top + 40) for x, y0 in pts] + [(W, nb.height), (0, nb.height)], fill=255)
     img.paste(nb, (0, band_top - 40), nm)
+
+    if char is not None:
+        sh = Image.new("RGBA", img.size, (0, 0, 0, 0))
+        ImageDraw.Draw(sh).ellipse((cxp + 20, H - 40, cxp + char.width - 20, H - 4), fill=(0, 0, 20, 120))
+        img.alpha_composite(sh.filter(ImageFilter.GaussianBlur(10)))
+        img.alpha_composite(char, (cxp, cyp))
+        tx = max(cxp + char.width + 18, M)
+    else:
+        tx = M
+
     d = ImageDraw.Draw(img)
-    tx = M
-    d.text((tx, band_top + 22), "เรียบเรียงโดย", font=font(spec, "Medium", 30), fill=(210, 220, 255))
-    gradient_text(img, (tx, band_top + 58), spec.get("author", "ดร.ทรรศนีย์ บุญมั่น"), font(spec, "ExtraBold", 60), [GOLD, (255, 225, 120)])
-    d.text((tx, band_top + 138), spec.get("author_role", "วิทยากรด้าน AI in Health"), font=font(spec, "SemiBold", 32), fill=WHITE)
-    fc = font(spec, "Medium", 24)
-    d.text((W - M - tmp.textlength(f"© {CREDIT}", font=fc), H - 46), f"© {CREDIT}", font=fc, fill=(200, 210, 255))
-    if spec.get("date"):
-        fd = font(spec, "Regular", 24)
-        d.text((W - M - tmp.textlength(spec["date"], font=fd), H - 78), spec["date"], font=fd, fill=(200, 210, 255))
+    text_w = W - M - tx
+    if spec.get("credit_in_image", True):
+        lines = [("เรียบเรียงโดย", "Medium", 30, "soft"),
+                 (spec.get("author", "ดร.ทรรศนีย์ บุญมั่น"), "ExtraBold", 60, "gold"),
+                 (spec.get("author_role", "วิทยากรด้าน AI in Health"), "SemiBold", 32, "white")]
+    else:
+        lines = [("ติดตามความรู้ AI เพื่อสุขภาพได้ที่", "Medium", 30, "soft"),
+                 ("KATHA AI · AJ Pokpak", "ExtraBold", 54, "gold"),
+                 ("อ่านรายละเอียดเต็มในโพสต์", "SemiBold", 32, "white")]
+    ys = [band_top + 22, band_top + 58, band_top + 138]
+    for (txt, wgt, size, colr), yy in zip(lines, ys):
+        f = fit(tmp, txt, spec, wgt, size, text_w, int(size * 0.6))
+        if colr == "gold":
+            gradient_text(img, (tx, yy), txt, f, [GOLD, (255, 225, 120)])
+        else:
+            d.text((tx, yy), txt, font=f, fill=(210, 220, 255) if colr == "soft" else WHITE)
+    fc = font(spec, "Medium", 22)
+    small = [spec.get("date", "")]
+    if spec.get("credit_in_image", True):
+        small.append(f"© {CREDIT}")
+    yy = H - 40
+    for t in reversed([t for t in small if t]):
+        d.text((W - M - tmp.textlength(t, font=fc), yy), t, font=fc, fill=(200, 210, 255)); yy -= 30
 
     img.convert("RGB").save(out, "PNG")
 
